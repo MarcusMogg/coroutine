@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace libco {
 // 128kb
@@ -29,13 +30,13 @@ struct StackFullCo {
   CoStatus status;            // 协程的状态
   uint8_t stack[kStackSize];  // 协程的堆栈
 
-  StackFullCo(const std::string& name, const FuncType& func)
-      : func(func), name(name), waiter(nullptr), status(CoStatus::NEW) {
+  StackFullCo(const std::string& name, FuncType&& func)
+      : func(std::forward<FuncType>(func)), name(name), waiter(nullptr), status(CoStatus::NEW) {
     std::fill(stack, stack + kStackSize, 0);
   }
 };
 
-std::shared_ptr<StackFullCo> CoStart(const std::string& name, const FuncType& func);
+std::shared_ptr<StackFullCo> CoStart(const std::string& name, FuncType&& func);
 void CoYield();
 void CoWait(const std::shared_ptr<StackFullCo>& co);
 

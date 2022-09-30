@@ -12,5 +12,8 @@ add_subdirectory("src")
 add_executable (coroutine "main.cc")
 target_compile_features(coroutine PRIVATE cxx_std_17)
 
+target_link_libraries(coroutine PRIVATE libco)
+
+
 # 单测
 add_subdirectory("test")

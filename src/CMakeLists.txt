@@ -18,4 +18,4 @@ target_include_directories(libco
         ${PROJECT_SOURCE_DIR}/
 )
 # https://github.com/google/sanitizers/issues/721
-set(CMAKE_CXX_FLAGS "-U_FORTIFY_SOURCE")
+set(CMAKE_CXX_FLAGS "-U_FORTIFY_SOURCE -m64")
