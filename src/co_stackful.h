@@ -36,8 +36,8 @@ struct StackFullCo {
   }
 };
 
-std::shared_ptr<StackFullCo> CoStart(const std::string& name, FuncType&& func);
+StackFullCo* CoStart(const std::string& name, FuncType&& func);
 void CoYield();
-void CoWait(const std::shared_ptr<StackFullCo>& co);
+void CoWait(const StackFullCo* co);
 
 }  // namespace libco
