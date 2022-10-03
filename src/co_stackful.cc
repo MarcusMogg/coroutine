@@ -17,8 +17,9 @@ static constexpr char kMaster[] = "master";
 
 namespace detail {
 
-void CoCall(const StackFullCo* co) {
+void CoCall(StackFullCo* co) {
   co->func();
+  co->status = CoStatus::DEAD;
   std::cout << co->name << " end\n";
 }
 
@@ -41,26 +42,6 @@ StackFullCo* CoNext() {
   return nullptr;
 }
 
-static inline void StackSwitchCall(uintptr_t sp, uintptr_t entry, uintptr_t arg) {
-  std::cout << sp << "\n";
-  /*
-    *(sp-1) = *rsp
-    rsp = sp - 1
-    set arg
-    call func
-    move old rsp to rsp from sp-1
-   */
-  asm volatile(
-      "movq %%rsp, -0x10(%0);"
-      "leaq -0x20(%0), %%rsp;"
-      "movq %2, %%rdi;"
-      "call %1;"
-      "movq -0x10(%0), %%rsp;"
-      :
-      : "b"(sp), "d"(entry), "a"(arg)
-      : "memory");
-}
-
 __attribute__((constructor(201))) void BeforeMain() {
   _current = libco::CoStart(kMaster, []() {});
   _current->status = CoStatus::RUNNING;
@@ -77,27 +58,30 @@ StackFullCo* CoStart(const std::string& name, FuncType&& func) {
 void CoYield() {
   int ret = setjmp(_current->context);
   if (ret == 0) {
-    const auto next_co = detail::CoNext();
+    const auto volatile next_co = detail::CoNext();
     if (next_co == nullptr) {
       return;
     }
-    const auto cur_copy = _current;
     _current->status = CoStatus::WAITING;
     _current = next_co;
 
     if (next_co->status == CoStatus::NEW) {
       next_co->status = CoStatus::RUNNING;
-      detail::StackSwitchCall(
-          reinterpret_cast<uintptr_t>((next_co->stack) + kStackSize),
-          reinterpret_cast<uintptr_t>(&detail::CoCall),
-          reinterpret_cast<uintptr_t>(next_co));
+      asm volatile(
+          "movq %%rsp, 0(%0);"
+          "movq %0, %%rsp;"
+          "movq %2, %%rdi;"
+          "call *%1;"
+          "movq 0(%0), %%rsp;"
+          :
+          : "b"(reinterpret_cast<uintptr_t>((next_co->stack) + kStackSize) - 16),
+            "d"(reinterpret_cast<uintptr_t>(&detail::CoCall)),
+            "a"(reinterpret_cast<uintptr_t>(next_co)));
 
       // CoCall end
       std::cout << " return\n";
-      next_co->status = CoStatus::DEAD;
-      _current = cur_copy;
-      _current->status = CoStatus::RUNNING;
-      // CoYield();
+
+      CoYield();
     } else if (next_co->status == CoStatus::WAITING) {
       next_co->status = CoStatus::RUNNING;
       longjmp(next_co->context, 1);
@@ -107,7 +91,7 @@ void CoYield() {
   }
 }
 
-void CoWait(const StackFullCo* co) {
+void CoWait(StackFullCo* co) {
   while (co->status != CoStatus::DEAD) {
     CoYield();
   }

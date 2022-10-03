@@ -38,6 +38,6 @@ struct StackFullCo {
 
 StackFullCo* CoStart(const std::string& name, FuncType&& func);
 void CoYield();
-void CoWait(const StackFullCo* co);
+void CoWait(StackFullCo* co);
 
 }  // namespace libco
