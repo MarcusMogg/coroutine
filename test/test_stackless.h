@@ -1,5 +1,6 @@
 #pragma once
 
+#include <format>
 #include <string>
 
 #include "src/co_stackless.h"
@@ -9,8 +10,7 @@ class RequestLineParser : public libco::StackLessCo {
   bool Consume(char c);
 
   const std::string ToString() const {
-    return std::string("method: ") + method_ + "\npath: " + path_ +
-           "\nversion: " + std::to_string(version_);
+    return std::format("method:{} \npath:{} \nversion:{}", method_, path_, version_);
   }
 
  private:

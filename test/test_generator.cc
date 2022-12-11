@@ -1,5 +1,6 @@
 #include "test_generator.h"
 
+#include <format>
 #include <iostream>
 
 libco::Generator<int> Fib(int n) {
@@ -23,13 +24,14 @@ libco::Generator<int> YieldOnce() { co_yield 1; }
 void TestFib(int n) {
   auto g = Fib(n);
   for (int i = 0; const auto& j : g) {
-    std::cout << "Fib(" << i++ << ")=" << j << "\n";
+    std::cout << std::format("Fib({})={} \n", i++, j);
   }
 }
 
 void TestYieldOnce() {
   auto g = YieldOnce();
+  // https://zh.cppreference.com/w/cpp/language/range-for
   for (int i = 0; const auto& j : g) {
-    std::cout << "YieldOnce " << i++ << " " << j << "\n ";
+    std::cout << std::format("YieldOnce {} {} \n", i++, j);
   }
 }
