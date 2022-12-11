@@ -1,0 +1,3 @@
+# see https://clangd.llvm.org/config#compileflags
+CompileFlags:
+  Add: [-std=c++20]
