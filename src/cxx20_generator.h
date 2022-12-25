@@ -1,51 +1,67 @@
 #pragma once
 
 #include <coroutine>
+#include <iterator>
 #include <memory>
+#include <utility>
 
 namespace libco {
 
+struct GeneratorEnd {};
+
+template <typename HandleType, typename ValueType>
+struct GeneratorIter {
+  using iterator_category = std::input_iterator_tag;
+  using difference_type = std::ptrdiff_t;
+  using value_type = std::remove_reference_t<ValueType>;
+  using reference = std::conditional_t<std::is_reference_v<ValueType>, ValueType, ValueType&>;
+  using pointer = std::add_pointer_t<ValueType>;
+
+  bool operator!=(const GeneratorEnd&) { return !h.done(); }
+  void operator++() { h(); }
+  value_type& operator*() { return h.promise().value(); }
+
+  HandleType h;
+};
+
 template <typename T>
-class Generator {
+class SimpleGenerator {
  public:
   struct promise_type;
   using handle_type = std::coroutine_handle<promise_type>;
-
   struct promise_type {
-    T value_;
+    using pointer = std::add_pointer_t<T>;
+    pointer value_;
 
     auto co() { return handle_type::from_promise(*this); }
-    Generator get_return_object() { return Generator(this); }
+    auto get_return_object() { return SimpleGenerator(co()); }
     std::suspend_always initial_suspend() { return {}; }
     std::suspend_always final_suspend() noexcept { return {}; }
     void unhandled_exception() { throw; }
 
-    template <std::convertible_to<T> From>
-    std::suspend_always yield_value(From&& from) {
-      value_ = std::forward<From>(from);
+    std::suspend_always yield_value(T& value) {
+      value_ = std::addressof(value);
+      return {};
+    }
+    std::suspend_always yield_value(T&& value) {
+      value_ = std::addressof(value);
       return {};
     }
     void return_void() {}
+
+    T& value() { return *value_; }
   };
 
-  explicit Generator(promise_type* p) : p_(p) {}
-  ~Generator() {
-    if (p_) {
-      p_->co().destroy();
+  explicit SimpleGenerator(handle_type h) : h_(h) {}
+  ~SimpleGenerator() {
+    if (h_) {
+      h_.destroy();
     }
   }
 
-  struct GeneratorEnd {};
-  struct GeneratorIter {
-    bool operator!=(const GeneratorEnd&) { return !p->co().done(); }
-    void operator++() { p->co()(); }
-    T& operator*() { return p->value_; }
-
-    promise_type* p;
-  };
-  auto end() { return GeneratorEnd{}; }
+  auto end() const { return GeneratorEnd{}; }
   auto begin() {
-    auto it = GeneratorIter{p_};
+    auto it = GeneratorIter<handle_type, T>{h_};
     if (!begin_) {
       ++it;
       begin_ = true;
@@ -54,7 +70,113 @@ class Generator {
   }
 
  private:
-  promise_type* p_ = nullptr;
+  handle_type h_;
+  bool begin_ = false;
+};
+
+template <typename T>
+class RecursiveGenerator {
+ public:
+  class promise_type;
+  using handle_type = std::coroutine_handle<promise_type>;
+
+  class promise_type {
+   public:
+    promise_type() : parent_(nullptr), root_(this), leaf_(this) {}
+    auto co() { return handle_type::from_promise(*this); }
+    auto get_return_object() { return RecursiveGenerator(co()); }
+    std::suspend_always initial_suspend() { return {}; }
+    auto final_suspend() noexcept {
+      struct FinalAwaitable {
+        bool await_ready() noexcept { return false; }
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_type> h) noexcept {
+          auto& promise = h.promise();
+          auto parent = h.promise().parent_;
+          if (parent) {
+            promise.root_->leaf_ = parent;
+            promise.leaf_ = parent;
+            return std::coroutine_handle<promise_type>::from_promise(*parent);
+          }
+          return std::noop_coroutine();
+        }
+        void await_resume() noexcept {}
+      };
+      return FinalAwaitable{};
+    }
+    void unhandled_exception() { throw; }
+
+    std::suspend_always yield_value(T& value) {
+      root_->value_ = std::addressof(value);
+      return {};
+    }
+    std::suspend_always yield_value(T&& value) {
+      root_->value_ = std::addressof(value);
+      return {};
+    }
+    auto yield_value(RecursiveGenerator&& g) {
+      struct YieldAwaitable {
+        YieldAwaitable(RecursiveGenerator&& g) : g_(std::forward<RecursiveGenerator>(g)) {}
+
+        bool await_ready() noexcept { return !g_.h_; }
+        std::coroutine_handle<> await_suspend(handle_type h) noexcept {
+          auto& current = h.promise();
+          auto& nested = g_.h_.promise();
+          auto& root = current.root_;
+          // merge g to h
+          nested.parent_ = &current;
+          nested.root_ = root;
+          root->leaf_ = &nested;
+
+          return g_.h_;
+        }
+        void await_resume() noexcept {}
+
+        RecursiveGenerator g_;
+      };
+      return YieldAwaitable(std::move(g));
+    }
+    void return_void() {}
+
+    T& value() { return *root_->value_; }
+
+    void resume() { handle_type::from_promise(*leaf_).resume(); }
+
+   private:
+    promise_type* parent_;
+    promise_type* root_;
+    promise_type* leaf_;
+
+    std::add_pointer_t<T> value_;
+  };
+
+  RecursiveGenerator(handle_type h) : h_(h) {}
+
+  struct iterator {
+    using iterator_category = std::input_iterator_tag;
+    using difference_type = std::ptrdiff_t;
+    using value_type = std::remove_reference_t<T>;
+    using reference = std::conditional_t<std::is_reference_v<T>, T, T&>;
+    using pointer = std::add_pointer_t<T>;
+
+    bool operator!=(const GeneratorEnd&) { return !h.done(); }
+    void operator++() { h.promise().resume(); }
+    value_type& operator*() { return h.promise().value(); }
+
+    handle_type h;
+  };
+
+  auto end() const { return GeneratorEnd{}; }
+  auto begin() {
+    auto it = iterator{h_};
+    if (!begin_) {
+      ++it;
+      begin_ = true;
+    }
+    return it;
+  }
+
+ private:
+  handle_type h_;
   bool begin_ = false;
 };
 

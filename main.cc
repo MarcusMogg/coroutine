@@ -7,6 +7,7 @@
 int main() {
   TestStackLess();
   TestFib(12);
+  TestFib2(10);
   TestYieldOnce();
   return 0;
 }
