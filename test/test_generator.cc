@@ -3,8 +3,6 @@
 #include <format>
 #include <iostream>
 
-#include "src/cxx20_generator.h"
-
 libco::SimpleGenerator<int> Fib(int n) {
   if (n == 0 || n == 1) {
     co_return;
